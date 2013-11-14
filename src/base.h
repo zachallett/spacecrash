@@ -13,6 +13,12 @@ typedef unsigned       int  uint;
 //-----------------------------------------------------------------------------
 // Useful macros
 #define SIZE_ARRAY(__a__) (sizeof(__a__)/sizeof(__a__[0]))
+#define LOG(ALL_ARGS) printf ALL_ARGS
+//#define LOG(ALL_ARGS)
+#define SAFESUB(ARG_BASE, ARG_CHUNK)          (ARG_BASE - ARG_CHUNK > 0        ? ARG_BASE - ARG_CHUNK : 0)
+#define SAFEADD(ARG_BASE, ARG_CHUNK, ARG_MAX) (ARG_BASE + ARG_CHUNK <= ARG_MAX ? ARG_BASE + ARG_CHUNK : ARG_MAX)
+#define MAX(ARG_A, ARG_B) ((ARG_A)>(ARG_B)?(ARG_A):(ARG_B))
+#define MIN(ARG_A, ARG_B) ((ARG_A)<(ARG_B)?(ARG_A):(ARG_B))
 
 //-----------------------------------------------------------------------------
 struct ivec2 { int x, y; };

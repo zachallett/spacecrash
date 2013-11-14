@@ -8,6 +8,12 @@ inline bool     CORE_RandChance(float chance) { return CORE_FRand(0.f, 1.f) < ch
 inline float    CORE_FSquare(float f) { return f * f; }
 
 //-----------------------------------------------------------------------------
+inline int UMod(int ix, int n)
+{
+  return (int) ((unsigned)ix % (unsigned)n);
+}
+
+//-----------------------------------------------------------------------------
 struct rgba { float r, g, b, a; };
 inline rgba makergba(float r, float g, float b, float a) { rgba c; c.r = r; c.g = g; c.b = b; c.a = a; return c; }
 

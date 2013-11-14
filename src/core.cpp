@@ -5,7 +5,7 @@
 //========================================================================================
 // Loading textures (from BMP files)
 
-#define MAX_TEXTURES 32
+#define MAX_TEXTURES 256
 struct Texture
 {
   bool used;
@@ -71,7 +71,10 @@ int CORE_LoadBmp(const char filename[], bool wrap)
       }
     
       if (retval == -1)
+      {
+        LOG(("Maximum textures number exceeded"));
         return retval;
+      }
   
       dword  width  = READ_LE_DWORD(hdr.width);
       sdword height = READ_LE_DWORD(hdr.height);
