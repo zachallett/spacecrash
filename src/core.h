@@ -33,10 +33,11 @@ void   CORE_RenderCenteredSprite(vec2 pos, vec2 size, int texix, rgba color = CO
 // Sound
 bool CORE_InitSound();
 void CORE_EndSound();
-uint CORE_LoadWav     (const char filename[]);
-void CORE_UnloadWav (uint snd);
-void CORE_PlaySound (uint snd, float volume, float pitch);
-void CORE_PlayLoopSound (unsigned loopchannel, ALuint snd, float volume, float pitch);
-void CORE_SetLoopSoundParam (unsigned loopchannel, float volume, float pitch);
+uint CORE_LoadWav(const char filename[]);
+void CORE_UnloadWav(uint snd);
+void CORE_PlaySound(uint snd, float volume, float pitch);
+void CORE_PlayLoopSound    (unsigned loopchannel, ALuint snd, float volume, float pitch);
+void CORE_SetLoopSoundParam(unsigned loopchannel, float volume, float pitch);
+void CORE_StopLoopSound    (unsigned loopchannel);
 
 #endif

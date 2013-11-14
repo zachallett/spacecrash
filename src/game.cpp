@@ -61,11 +61,30 @@
 #define DYING_TIME 2.f
 #define VICTORY_TIME 8.f
 
-// Tech constants
 #define FPS 60.f
 #define FRAMETIME (1.f/FPS)
 
 #define SND_DEFAULT_VOL .7f
+#define SHIP_ENGINE_SOUND_CHANNEL 1
+
+#define MENU_BKG_SCROLL_SPEED 10.f
+#define MAIN_MENU_TILESET T_TILES_R_ON_L
+
+// Global options
+bool  g_opt_music = true;
+bool  g_opt_sound_fx = true;
+
+// Trigger-only keypresses
+bool   g_just_pressed_up    = false;
+bool   g_just_pressed_down  = false;
+bool   g_just_pressed_enter = false;
+bool   g_just_pressed_esc   = false;
+bool   g_just_pressed_space = false;
+bool   g_was_pressed_up    = false;
+bool   g_was_pressed_down  = false;
+bool   g_was_pressed_enter = false;
+bool   g_was_pressed_esc   = false;
+bool   g_was_pressed_space = false;
 
 //=============================================================================
 // Textures management
@@ -365,6 +384,79 @@ GLuint Tex(TexId id)
   return textures[id].tex;
 }
 
+//=============================================================================
+// Font support
+#define FONTDEF_ROWS 8
+#define FONTDEF_COLS 8
+#define MAX_FONT_CHARDEFS 256
+#define FONTDEF_CHAR_WIDTH (16.f/128.f)
+#define FONTDEF_CHAR_HEIGHT (16.f/128.f)
+#define FONT_CHAR_WIDTH 16.f
+#define FONT_CHAR_HEIGHT 16.f
+
+char fontdef[FONTDEF_ROWS][FONTDEF_COLS+1] =
+{
+  { " !\"~*%-'" },
+  { "   +, ./" },
+  { "01234567" },
+  { "89:;aib?" },
+  { "*ABCDEFG" },
+  { "HIJKLMNO" },
+  { "PQRSTUVW" },
+  { "XYZ     " },
+};
+
+struct FontCharDef
+{
+  char ch;
+  vec2 p0;
+};
+
+FontCharDef fontchardefs[MAX_FONT_CHARDEFS] = { 0 };
+
+//-----------------------------------------------------------------------------
+void PrepareFont()
+{
+  for (int i = 0; i < FONTDEF_ROWS; i++) // One iteration per row
+  {
+    for (int j = 0; j < FONTDEF_COLS; j++) // Inside row
+    {
+      unsigned char ch = fontdef[i][j];
+      fontchardefs[ch].ch = ch;
+      fontchardefs[ch].p0 = vmake(j * FONTDEF_CHAR_WIDTH, (FONTDEF_ROWS - i - 1) * FONTDEF_CHAR_HEIGHT);
+    }
+  }
+}
+
+//-----------------------------------------------------------------------------
+void DrawChar(vec2 p0, vec2 p1, unsigned char ch, rgba color)
+{
+  if (ch < MAX_FONT_CHARDEFS && fontchardefs[ch].ch == ch)
+  {
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f( color.r, color.g, color.b, color.a);
+    
+    glBindTexture( GL_TEXTURE_2D, CORE_GetBmpOpenGLTex(Tex(T_FONT)) );
+    glBegin( GL_QUADS );
+    glTexCoord2d(fontchardefs[ch].p0.x                     , fontchardefs[ch].p0.y                      ); glVertex2f(p0.x, p0.y);
+    glTexCoord2d(fontchardefs[ch].p0.x + FONTDEF_CHAR_WIDTH, fontchardefs[ch].p0.y                      ); glVertex2f(p1.x, p0.y);
+    glTexCoord2d(fontchardefs[ch].p0.x + FONTDEF_CHAR_WIDTH, fontchardefs[ch].p0.y + FONTDEF_CHAR_HEIGHT); glVertex2f(p1.x, p1.y);
+    glTexCoord2d(fontchardefs[ch].p0.x                     , fontchardefs[ch].p0.y + FONTDEF_CHAR_HEIGHT); glVertex2f(p0.x, p1.y);
+    glEnd();
+  }
+}
+
+//-----------------------------------------------------------------------------
+void DrawString(vec2 p0, const char string[], float charsize, rgba color)
+{
+  int n = (int)strlen(string);
+  for (int i = 0; i < n; i++)
+  {
+    DrawChar(p0, vadd(p0, vmake(charsize, charsize)), string[i], color);
+    p0 = vadd(p0, vmake(charsize, 0.f));
+  }
+}
+
 
 //=============================================================================
 // Sound engine
@@ -404,17 +496,35 @@ void UnloadSounds()
 
 void PlaySound(SoundId id, float vol = SND_DEFAULT_VOL, float freq = 1.f)
 {
-  CORE_PlaySound(sounds[id].bufid, vol, freq);
+  if (g_opt_sound_fx)
+    CORE_PlaySound(sounds[id].bufid, vol, freq);
 }
 
 void PlayLoopSound (unsigned loopchannel, SoundId id, float vol, float pitch)
 {
-  CORE_PlayLoopSound(loopchannel, sounds[id].bufid, vol, pitch);
+  if (g_opt_sound_fx)
+    CORE_PlayLoopSound(loopchannel, sounds[id].bufid, vol, pitch);
+}
+
+void StopLoopSound(unsigned loopchannel)
+{
+  CORE_StopLoopSound(loopchannel);
 }
 
 void SetLoopSoundParam (unsigned loopchannel, float vol, float pitch)
 {
-  CORE_SetLoopSoundParam(loopchannel, vol, pitch);
+  if (g_opt_sound_fx)
+    CORE_SetLoopSoundParam(loopchannel, vol, pitch);
+}
+
+void UpdateSoundStatus()
+{
+  if (!g_opt_sound_fx)
+  {
+    CORE_SetLoopSoundParam(SHIP_ENGINE_SOUND_CHANNEL, 0.f, 1.f); // Stop engine
+  }
+  
+  // Pending music!
 }
 
 //=============================================================================
@@ -547,12 +657,8 @@ void RenderPSystems(vec2 offset)
           vec2 p0 = vsub( pos, vmake(radius, radius) );
           vec2 p1 = vadd( pos, vmake(radius, radius) );
           rgba color = psystems[i].particles[j].color;
-          float r = color.r;
-          float g = color.g;
-          float b = color.b;
-          float a = color.a;
           
-          glColor4f( r, g, b, a);
+          glColor4f( color.r, color.g, color.b, color.a);
           
           glTexCoord2d(0.0,0.0);
           glVertex2f(p0.x + offset.x, p0.y + offset.y);
@@ -641,15 +747,18 @@ void RunPSystems()
 
 //-----------------------------------------------------------------------------
 // Game state
-enum GameState { GS_PLAYING, GS_DYING, GS_STARTING, GS_VICTORY };
+float g_time      = 0.f;
+enum GameState { GS_PLAYING, GS_DYING, GS_STARTING, GS_VICTORY, GS_MAIN_MENU, GS_INGAME_MENU };
 GameState g_gs = GS_STARTING;
 float g_gs_timer = 0.f;
 float g_current_race_pos = 0.f;
 float g_camera_offset = 0.f;
 float g_rock_chance = START_ROCK_CHANCE_PER_PIXEL;
 float g_time_from_last_rocket = 0.f;
-TexId g_active_tileset = T_TILES_G_ON_S;
+TexId g_active_tileset = MAIN_MENU_TILESET;
 int   g_current_level = 0; // 0 to 8
+bool  g_user_exit = false;
+int   g_unlocked_level = 0;
 
 //=============================================================================
 // Levels
@@ -676,8 +785,8 @@ struct LevelDesc
 
 LevelDesc LevelDescs[NUM_LEVELS] = {
 //
-  { T_TILES_G_ON_S,  40000.f, (2.2f * MAINSHIP_RADIUS), 0.5f, 0, 10, 0, 3, 0.1f, 0.0f, 300.f, 600.f, 700.f, 2500.f, 0.2f, 0.9f },
-  { T_TILES_P_ON_S,  60000.f, (2.1f * MAINSHIP_RADIUS), 0.5f, 1, 15, 0, 3, 0.1f, 0.0f, 300.f, 600.f, 650.f, 2300.f, 0.2f, 0.9f },
+  { T_TILES_P_ON_S,  40000.f, (2.2f * MAINSHIP_RADIUS), 0.5f, 0, 10, 0, 3, 0.1f, 0.0f, 300.f, 600.f, 700.f, 2500.f, 0.2f, 0.9f },
+  { T_TILES_G_ON_S,  60000.f, (2.1f * MAINSHIP_RADIUS), 0.5f, 1, 15, 0, 3, 0.1f, 0.0f, 300.f, 600.f, 650.f, 2300.f, 0.2f, 0.9f },
   { T_TILES_D_ON_S,  80000.f, (2.0f * MAINSHIP_RADIUS), 0.5f, 1, 20, 0, 3, 0.2f, 0.0f, 250.f, 600.f, 600.f, 2100.f, 0.2f, 0.9f },
   { T_TILES_E_ON_D, 100000.f, (1.9f * MAINSHIP_RADIUS), 0.6f, 2, 25, 1, 4, 0.3f, 0.0f, 250.f, 500.f, 550.f, 1900.f, 0.2f, 0.9f },
   { T_TILES_I_ON_W, 120000.f, (1.8f * MAINSHIP_RADIUS), 0.7f, 2, 30, 1, 4, 0.4f, 0.1f, 200.f, 500.f, 500.f, 1700.f, 0.1f, 0.9f },
@@ -907,6 +1016,315 @@ void GenNextElements()
 }
 
 //-----------------------------------------------------------------------------
+void ResetNewGame(int level)
+{
+  if      (level < 0) level = 0;
+  else if (level >= NUM_LEVELS) level = NUM_LEVELS-1;
+  g_current_level = level;
+  g_active_tileset = LevelDescs[level].tileset;
+  
+  // Reset everything for a new game...
+  g_next_challenge_area = FIRST_CHALLENGE;
+  g_last_conditioned = vmake(.5f * G_WIDTH, 0.f);
+  g_current_race_pos = 0.f;
+  g_camera_offset = 0.f;
+  g_rock_chance = START_ROCK_CHANCE_PER_PIXEL;
+  g_gs = GS_STARTING;
+  g_gs_timer = 0.f;
+  g_last_generated = -1;
+
+  // Start logic
+  for (int i = 0; i < MAX_ENTITIES; i++)
+    g_entities[i].type = E_NULL;
+  InsertEntity(E_MAIN, vmake(G_WIDTH/2.0, G_HEIGHT/8.f), vmake(0.f, SHIP_START_SPEED), MAINSHIP_RADIUS, T_SHIP_C, true);
+  
+  PlayLoopSound(SHIP_ENGINE_SOUND_CHANNEL, SND_ENGINE, 0.7f, 0.3f);
+  
+  ResetPSystems();
+  
+  MAIN_SHIP.psystem = CreatePSystem(PST_FIRE, MAIN_SHIP.pos, vmake(0.f,0.f));
+  MAIN_SHIP.psystem_off = vmake(0.f, -120.f);
+}
+
+//-----------------------------------------------------------------------------
+void FinishGame()
+{
+  g_active_tileset = MAIN_MENU_TILESET;
+  g_current_race_pos = 0.f;
+  g_camera_offset = 0.f;
+  g_rock_chance = START_ROCK_CHANCE_PER_PIXEL;
+  g_gs = GS_MAIN_MENU;
+  g_gs_timer = 0.f;
+  g_last_generated = -1;
+  for (int i = 0; i < MAX_ENTITIES; i++)
+    g_entities[i].type = E_NULL;
+  ResetPSystems();
+  StopLoopSound(SHIP_ENGINE_SOUND_CHANNEL);
+}
+
+//=============================================================================
+// Menus
+#define MENU_CHAR_SIZE 60.f
+#define MENU_SPACE_BETWEEN_LINES 20.f
+#define MENU_COLOR_UNSELECTED makergba(.8f, .8f, .8f, .8f)
+#define MENU_COLOR_SELECTED COLOR_WHITE
+enum MenuId
+{
+  M_NONE,
+  M_MAIN, M_LEVELS, M_HELP, M_MAIN_OPTIONS, M_CONFIRM_EXIT,
+  M_INGAME, M_INGAME_OPTIONS, M_CONFIRM_CANCEL,
+  // Pseudo-menus
+  M_PASSIVE, M_ACTION_EXIT, M_ACTION_CANCEL, M_ACTION_PLAY, M_ACTION_RESUME, M_ACTION_TOGGLE_MUSIC, M_ACTION_TOGGLE_SOUND_FX
+};
+#define MAX_MENU_STRING  100
+#define MAX_MENU_ENTRIES 20
+struct MenuEntryDef
+{
+  char   text[MAX_MENU_STRING];
+  MenuId target;
+  int    target_ix;
+};
+struct MenuDef
+{
+  char         title[MAX_MENU_STRING];
+  int          num_entries;
+  MenuEntryDef entries[MAX_MENU_ENTRIES];
+};
+
+MenuDef g_MenuDefs[] = {
+  /*M_NONE*/           { "", 0, {}},
+  /*M_MAIN*/           { "",             4,
+                           {{ "PLAY",             M_LEVELS,       0 },
+                            { "HELP",             M_HELP,         0 },
+                            { "OPTIONS",          M_MAIN_OPTIONS, 0 },
+                            { "EXIT",             M_CONFIRM_EXIT, 1 }}
+                       },
+  /*M_LEVELS*/         { "CHOOSE WORLD", 10,
+                           {{ "JUNGLE",           M_ACTION_PLAY, 0},
+                            { "PLAINS",           M_ACTION_PLAY, 1},
+                            { "DESERT",           M_ACTION_PLAY, 2},
+                            { "CAVES",            M_ACTION_PLAY, 3},
+                            { "OCEAN",            M_ACTION_PLAY, 4},
+                            { "TECHNO",           M_ACTION_PLAY, 5},
+                            { "LAVA",             M_ACTION_PLAY, 6},
+                            { "ANEMONA",          M_ACTION_PLAY, 7},
+                            { "LIMBO",            M_ACTION_PLAY, 8},
+                            { "BACK",             M_MAIN,        0}}
+                       },
+  /*M_HELP*/           { "", 15,
+                           {{ "WELCOME TO",       M_PASSIVE, 0},
+                            { "SPACECRASH!",      M_PASSIVE, 0},
+                            { "STEER YOUR SHIP,", M_PASSIVE, 0},
+                            { "AVOID ROCKS,",     M_PASSIVE, 0},
+                            { "MINES, AND",       M_PASSIVE, 0},
+                            { "ENEMY DRONES",     M_PASSIVE, 0},
+                            { "",                 M_PASSIVE, 0},
+                            { "GAME BY JONBHO",   M_PASSIVE, 0},
+                            { "GFX BY DAN COOK",  M_PASSIVE, 0},
+                            { "MUSIC AND FX BY",  M_PASSIVE, 0},
+                            { "(---)",            M_PASSIVE, 0},
+                            { "",                 M_PASSIVE, 0},
+                            { "WWW.JONBHO.NET",   M_PASSIVE, 0},
+                            { "",                 M_PASSIVE, 0},
+                            { "BACK",             M_MAIN,    1}}
+                       },
+  /*M_MAIN_OPTIONS*/   { "OPTIONS", 3,
+                           {{ "MUSIC: ON",        M_ACTION_TOGGLE_MUSIC, 0},
+                            { "SOUND FX: ON",     M_ACTION_TOGGLE_SOUND_FX, 1},
+                            { "BACK",             M_MAIN, 2}},
+                       },
+  /*M_CONFIRM_EXIT*/   { "ARE YOU SURE?", 2,
+                           {{ "EXIT",             M_ACTION_EXIT, 0},
+                            { "GO BACK",          M_MAIN, 3}}
+                       },
+  /*M_INGAME*/         { "",  3,
+                           {{ "OPTIONS",          M_INGAME_OPTIONS, 0 },
+                            { "EXIT WORLD",       M_CONFIRM_CANCEL, 1 },
+                            { "CONTINUE",         M_ACTION_RESUME,  0 }}
+                       },
+  /*M_INGAME_OPTIONS*/ { "OPTIONS", 3,
+                           {{ "MUSIC: ON",        M_ACTION_TOGGLE_MUSIC, 0},
+                            { "SOUND FX: ON",     M_ACTION_TOGGLE_SOUND_FX, 1},
+                            { "BACK",             M_INGAME, 1}}
+                       },
+  /*M_CONFIRM_CANCEL*/ { "ARE YOU SURE?", 2,
+                           {{ "EXIT",             M_ACTION_CANCEL, 0},
+                            { "GO BACK",          M_INGAME, 1}}
+                       },
+};
+
+//-----------------------------------------------------------------------------
+MenuId g_current_menu = M_HELP;
+int    g_current_menu_option = 0;
+
+//-----------------------------------------------------------------------------
+void DrawCenteredLine(float y, char text[], rgba color)
+{
+  float w = strlen(text) * MENU_CHAR_SIZE;
+  DrawString(vmake(.5f * G_WIDTH - .5f * w, y), text, MENU_CHAR_SIZE, color);
+}
+
+//-----------------------------------------------------------------------------
+void RenderMenu()
+{
+  // Make sure current option is valid for current menu
+  if (g_current_menu_option < 0)
+    g_current_menu_option = 0;
+  else if (g_current_menu_option >= g_MenuDefs[g_current_menu].num_entries)
+    g_current_menu_option = g_MenuDefs[g_current_menu].num_entries - 1;
+  while (g_current_menu_option >= 0
+         && g_current_menu_option < g_MenuDefs[g_current_menu].num_entries - 1
+         && g_MenuDefs[g_current_menu].entries[g_current_menu_option].target == M_PASSIVE)
+    g_current_menu_option++;
+  
+  // Calculate menu height
+  bool has_title = strlen(g_MenuDefs[g_current_menu].title) > 0;
+  int nlines = g_MenuDefs[g_current_menu].num_entries + (has_title ? 1 : 0);
+  float menu_height = nlines * MENU_CHAR_SIZE + (nlines-1) * MENU_SPACE_BETWEEN_LINES;
+  
+  float current_y = .5f * G_HEIGHT + .5f * menu_height;
+  
+  if (has_title)
+  {
+    DrawCenteredLine(current_y, g_MenuDefs[g_current_menu].title, MENU_COLOR_UNSELECTED);
+    current_y -= MENU_CHAR_SIZE + MENU_SPACE_BETWEEN_LINES;
+  }
+  
+  for (int i = 0; i < g_MenuDefs[g_current_menu].num_entries; i++)
+  {
+    char text[MAX_MENU_STRING];
+    
+    // Special text
+    if (g_MenuDefs[g_current_menu].entries[i].target == M_ACTION_TOGGLE_MUSIC)
+    {
+      if (g_opt_music)
+        strcpy(text, "MUSIC: ON");
+      else
+        strcpy(text, "MUSIC: OFF");
+    }
+    else if (g_MenuDefs[g_current_menu].entries[i].target == M_ACTION_TOGGLE_SOUND_FX)
+    {
+      if (g_opt_sound_fx)
+        strcpy(text, "SOUND FX: ON");
+      else
+        strcpy(text, "SOUND FX: OFF");
+    }
+    else
+      strcpy(text, g_MenuDefs[g_current_menu].entries[i].text);
+    
+    if (i != g_current_menu_option)
+      DrawCenteredLine(current_y, text, MENU_COLOR_UNSELECTED);
+    else
+      DrawCenteredLine(current_y, text, MENU_COLOR_SELECTED);
+    
+    current_y -= MENU_CHAR_SIZE + MENU_SPACE_BETWEEN_LINES;
+  }
+}
+
+bool  g_music = true;
+bool  g_sound_fx = true;
+
+//-----------------------------------------------------------------------------
+void EnterMenu(GameState gs)
+{
+  if (gs == GS_MAIN_MENU)
+  {
+    g_gs = GS_MAIN_MENU;
+    g_current_menu = M_MAIN;
+    g_current_menu_option = 0;
+  }
+  else if (gs == GS_INGAME_MENU)
+  {
+    g_gs = GS_INGAME_MENU;
+    g_current_menu = M_INGAME;
+    g_current_menu_option = 0;
+  }
+}
+
+//-----------------------------------------------------------------------------
+void DoMenuAction(MenuId action, int ix)
+{
+  switch (action)
+  {
+    case M_NONE:
+    case M_PASSIVE:
+      // Do nothing!
+      break;
+      
+    case M_ACTION_EXIT:
+      g_user_exit = true;
+      break;
+      
+    case M_ACTION_CANCEL:
+      // Cancel the game
+      FinishGame();
+      EnterMenu(GS_MAIN_MENU);
+      break;
+      
+    case M_ACTION_PLAY:
+      ResetNewGame(ix); // Start new game in given level
+      break;
+      
+    case M_ACTION_RESUME:
+      g_gs = GS_PLAYING; // Return to playing
+      break;
+      
+    case M_ACTION_TOGGLE_MUSIC:
+      g_opt_music = !g_opt_music;
+      UpdateSoundStatus();
+      break;
+      
+    case M_ACTION_TOGGLE_SOUND_FX:
+      g_opt_sound_fx = !g_opt_sound_fx;
+      UpdateSoundStatus();
+      break;
+      
+    // All other cases: enter menu
+    default:
+      g_current_menu = action;
+      g_current_menu_option = ix;
+      break;
+  }
+}
+
+#define IS_UNSELECTABLE(ENTRY) (ENTRY.target == M_PASSIVE || (ENTRY.target == M_ACTION_PLAY && ENTRY.target_ix > g_unlocked_level))
+
+//-----------------------------------------------------------------------------
+void ProcessInputMenu()
+{
+  if (g_just_pressed_up)
+  {
+    do {
+      g_current_menu_option--;
+      if (g_current_menu_option < 0)
+        g_current_menu_option = g_MenuDefs[g_current_menu].num_entries - 1;
+    } while (IS_UNSELECTABLE(g_MenuDefs[g_current_menu].entries[g_current_menu_option]));
+  }
+  else if (g_just_pressed_down)
+  {
+    do {
+      g_current_menu_option++;
+      if (g_current_menu_option >= g_MenuDefs[g_current_menu].num_entries)
+        g_current_menu_option = 0;
+    } while (IS_UNSELECTABLE(g_MenuDefs[g_current_menu].entries[g_current_menu_option]));
+  }
+  else if (g_just_pressed_space || g_just_pressed_enter)
+  {
+    MenuId action = g_MenuDefs[g_current_menu].entries[g_current_menu_option].target;
+    int ix = g_MenuDefs[g_current_menu].entries[g_current_menu_option].target_ix;
+    DoMenuAction(action, ix);
+  }
+  else if (g_just_pressed_esc)
+  {
+    // Do action for last entry in the menu
+    MenuId action = g_MenuDefs[g_current_menu].entries[g_MenuDefs[g_current_menu].num_entries-1].target;
+    int ix = g_MenuDefs[g_current_menu].entries[g_MenuDefs[g_current_menu].num_entries-1].target_ix;
+    DoMenuAction(action, ix);
+  }
+}
+
+//=============================================================================
+// Main game entry points: Run(), Render(), ProcessInput()
 void Render()
 {
   glClear( GL_COLOR_BUFFER_BIT );
@@ -965,209 +1383,185 @@ void Render()
         vmake(CHUNK_W, CHUNK_H),
         Tex(T_PEARL));
   }
+
+  if (g_gs == GS_MAIN_MENU || g_gs == GS_INGAME_MENU)
+    RenderMenu();
 }
 
 //-----------------------------------------------------------------------------
-void ResetNewGame(int level)
+void Run()
 {
-  if      (level < 0) level = 0;
-  else if (level >= NUM_LEVELS) level = NUM_LEVELS-1;
-  g_current_level = level;
-  g_active_tileset = LevelDescs[level].tileset;
-  
-  // Reset everything for a new game...
-  g_next_challenge_area = FIRST_CHALLENGE;
-  g_last_conditioned = vmake(.5f * G_WIDTH, 0.f);
-  g_current_race_pos = 0.f;
-  g_camera_offset = 0.f;
-  g_rock_chance = START_ROCK_CHANCE_PER_PIXEL;
-  g_gs = GS_STARTING;
-  g_gs_timer = 0.f;
-  g_last_generated = -1;
-
-  // Start logic
-  for (int i = 0; i < MAX_ENTITIES; i++)
-    g_entities[i].type = E_NULL;
-  InsertEntity(E_MAIN, vmake(G_WIDTH/2.0, G_HEIGHT/8.f), vmake(0.f, SHIP_START_SPEED), MAINSHIP_RADIUS, T_SHIP_C, true);
-  
-  PlayLoopSound(1, SND_ENGINE, 0.7f, 0.3f);
-  
-  ResetPSystems();
-  
-  MAIN_SHIP.psystem = CreatePSystem(PST_FIRE, MAIN_SHIP.pos, vmake(0.f,0.f));
-  MAIN_SHIP.psystem_off = vmake(0.f, -120.f);
-}
-
-//-----------------------------------------------------------------------------
-void RunGame()
-{
-  // Control main ship
-  if (g_gs == GS_VICTORY || g_gs == GS_STARTING)
+  if (g_gs != GS_INGAME_MENU && g_gs != GS_MAIN_MENU)
   {
-    if (MAIN_SHIP.vel.y < SHIP_CRUISE_SPEED)
-      MAIN_SHIP.vel.y = SAFEADD(MAIN_SHIP.vel.y, SHIP_INC_SPEED, SHIP_CRUISE_SPEED);
+    // Control main ship
+    if (g_gs == GS_VICTORY || g_gs == GS_STARTING)
+    {
+      if (MAIN_SHIP.vel.y < SHIP_CRUISE_SPEED)
+        MAIN_SHIP.vel.y = SAFEADD(MAIN_SHIP.vel.y, SHIP_INC_SPEED, SHIP_CRUISE_SPEED);
+      
+      MAIN_SHIP.fuel = SAFESUB(MAIN_SHIP.fuel, FRAME_FUEL_COST);
+    }
     
-    MAIN_SHIP.fuel = SAFESUB(MAIN_SHIP.fuel, FRAME_FUEL_COST);
-  }
-  
-  SetLoopSoundParam(1, 0.7f, 0.4f + 0.2f * (MAIN_SHIP.vel.y - SHIP_START_SPEED)/(SHIP_CRUISE_SPEED - SHIP_START_SPEED));
-  
-  // Heal main ship
-  if (g_gs != GS_DYING)
-  {
-    if (MAIN_SHIP.energy < MAX_ENERGY && MAIN_SHIP.fuel >= MIN_FUEL_FOR_HEAL)
+    SetLoopSoundParam(SHIP_ENGINE_SOUND_CHANNEL, 0.7f, 0.4f + 0.2f * (MAIN_SHIP.vel.y - SHIP_START_SPEED)/(SHIP_CRUISE_SPEED - SHIP_START_SPEED));
+    
+    // Heal main ship
+    if (g_gs != GS_DYING)
     {
-      MAIN_SHIP.energy = SAFEADD(MAIN_SHIP.energy, ENERGY_HEAL_PER_FRAME, MAX_ENERGY);
-      MAIN_SHIP.fuel   = SAFESUB(MAIN_SHIP.fuel, FUEL_HEAL_PER_FRAME);
-    }
-  }
-  
-  // Move entities
-  for (int i = MAX_ENTITIES - 1; i >= 0; i--)
-  {
-    if (g_entities[i].type != E_NULL)
-    {
-      g_entities[i].pos = vadd(g_entities[i].pos, g_entities[i].vel);
-      
-      // Remove entities that fell off the screen
-      if (g_entities[i].pos.y < g_camera_offset - G_HEIGHT)
-        KillEntity(i);
-      
-      if (g_entities[i].psystem != -1)
-        SetPSystemSource(g_entities[i].psystem, vadd(g_entities[i].pos, g_entities[i].psystem_off), g_entities[i].vel);
-    }
-  }
-  
-  // Advance 'stars'
-  for (int i = 0; i < MAX_ENTITIES; i++)
-  {
-    if (g_entities[i].type == E_STAR)
-    {
-      g_entities[i].gfxscale *= 1.008f;
-    }
-  }
-  
-  // Advance particle systems
-  RunPSystems();
-  
-  // Dont let steering off the screen!
-  if (MAIN_SHIP.pos.x < MAINSHIP_RADIUS)
-    MAIN_SHIP.pos.x = MAINSHIP_RADIUS;
-  if (MAIN_SHIP.pos.x > G_WIDTH - MAINSHIP_RADIUS)
-    MAIN_SHIP.pos.x = G_WIDTH - MAINSHIP_RADIUS;
-  
-  // Check collisions
-  if (g_gs == GS_PLAYING)
-  {
-    // Check everything agains ship
-    for (int i = 1; i < MAX_ENTITIES; i++)
-    {
-      // Should check against ship?
-      if (   g_entities[i].type == E_ROCK
-          || g_entities[i].type == E_JUICE
-          || g_entities[i].type == E_MINE
-          || g_entities[i].type == E_DRONE
-          )
+      if (MAIN_SHIP.energy < MAX_ENERGY && MAIN_SHIP.fuel >= MIN_FUEL_FOR_HEAL)
       {
-        if (vlen2(vsub(g_entities[i].pos, MAIN_SHIP.pos)) < CORE_FSquare(g_entities[i].radius+MAIN_SHIP.radius))
+        MAIN_SHIP.energy = SAFEADD(MAIN_SHIP.energy, ENERGY_HEAL_PER_FRAME, MAX_ENERGY);
+        MAIN_SHIP.fuel   = SAFESUB(MAIN_SHIP.fuel, FUEL_HEAL_PER_FRAME);
+      }
+    }
+    
+    // Move entities
+    for (int i = MAX_ENTITIES - 1; i >= 0; i--)
+    {
+      if (g_entities[i].type != E_NULL)
+      {
+        g_entities[i].pos = vadd(g_entities[i].pos, g_entities[i].vel);
+        
+        // Remove entities that fell off the screen
+        if (g_entities[i].pos.y < g_camera_offset - G_HEIGHT)
+          KillEntity(i);
+        
+        if (g_entities[i].psystem != -1)
+          SetPSystemSource(g_entities[i].psystem, vadd(g_entities[i].pos, g_entities[i].psystem_off), g_entities[i].vel);
+      }
+    }
+    
+    // Advance 'stars'
+    for (int i = 0; i < MAX_ENTITIES; i++)
+    {
+      if (g_entities[i].type == E_STAR)
+      {
+        g_entities[i].gfxscale *= 1.008f;
+      }
+    }
+    
+    // Advance particle systems
+    RunPSystems();
+    
+    // Dont let steering off the screen!
+    if (MAIN_SHIP.pos.x < MAINSHIP_RADIUS)
+      MAIN_SHIP.pos.x = MAINSHIP_RADIUS;
+    if (MAIN_SHIP.pos.x > G_WIDTH - MAINSHIP_RADIUS)
+      MAIN_SHIP.pos.x = G_WIDTH - MAINSHIP_RADIUS;
+    
+    // Check collisions
+    if (g_gs == GS_PLAYING)
+    {
+      // Check everything agains ship
+      for (int i = 1; i < MAX_ENTITIES; i++)
+      {
+        // Should check against ship?
+        if (   g_entities[i].type == E_ROCK
+            || g_entities[i].type == E_JUICE
+            || g_entities[i].type == E_MINE
+            || g_entities[i].type == E_DRONE
+            )
         {
-          switch (g_entities[i].type)
+          if (vlen2(vsub(g_entities[i].pos, MAIN_SHIP.pos)) < CORE_FSquare(g_entities[i].radius+MAIN_SHIP.radius))
           {
-            case E_ROCK:
-              if (g_entities[i].energy > 0)
-              {
-                PlaySound(SND_THUMP);
-                MAIN_SHIP.energy = SAFESUB(MAIN_SHIP.energy, ROCK_CRASH_ENERGY_LOSS);
+            switch (g_entities[i].type)
+            {
+              case E_ROCK:
+                if (g_entities[i].energy > 0)
+                {
+                  PlaySound(SND_THUMP);
+                  MAIN_SHIP.energy = SAFESUB(MAIN_SHIP.energy, ROCK_CRASH_ENERGY_LOSS);
+                  MAIN_SHIP.vel.y = SHIP_START_SPEED;
+                  g_entities[i].vel = vscale(vunit(vsub(g_entities[i].pos, MAIN_SHIP.pos)), CRASH_VEL);
+                  g_entities[i].energy = 0;
+                }
+                break;
+                
+              case E_JUICE:
+                MAIN_SHIP.fuel = SAFEADD(MAIN_SHIP.fuel, JUICE_FUEL, MAX_FUEL);
+                KillEntity(i);
+                break;
+                
+              case E_MINE:
+                PlaySound(SND_EXPLOSSION);
+                MAIN_SHIP.energy = SAFESUB(MAIN_SHIP.energy, MINE_CRASH_ENERGY_LOSS);
                 MAIN_SHIP.vel.y = SHIP_START_SPEED;
-                g_entities[i].vel = vscale(vunit(vsub(g_entities[i].pos, MAIN_SHIP.pos)), CRASH_VEL);
-                g_entities[i].energy = 0;
-              }
-              break;
-              
-            case E_JUICE:
-              MAIN_SHIP.fuel = SAFEADD(MAIN_SHIP.fuel, JUICE_FUEL, MAX_FUEL);
-              KillEntity(i);
-              break;
-              
-            case E_MINE:
-              PlaySound(SND_EXPLOSSION);
-              MAIN_SHIP.energy = SAFESUB(MAIN_SHIP.energy, MINE_CRASH_ENERGY_LOSS);
-              MAIN_SHIP.vel.y = SHIP_START_SPEED;
-              KillEntity(i);
-              break;
-              
-            case E_DRONE:
-              MAIN_SHIP.energy = SAFESUB(MAIN_SHIP.energy, MINE_CRASH_ENERGY_LOSS);
-              MAIN_SHIP.vel.y = SHIP_START_SPEED;
-              KillEntity(i);
-              break;
-              
-            default:
-              break;
+                KillEntity(i);
+                break;
+                
+              case E_DRONE:
+                MAIN_SHIP.energy = SAFESUB(MAIN_SHIP.energy, MINE_CRASH_ENERGY_LOSS);
+                MAIN_SHIP.vel.y = SHIP_START_SPEED;
+                KillEntity(i);
+                break;
+                
+              default:
+                break;
+            }
           }
         }
-      }
-      else if (g_entities[i].type == E_ROCKET)
-      {
-        // Check all rocks against this rocket
-        for (int j = 1; j < MAX_ENTITIES; j++)
+        else if (g_entities[i].type == E_ROCKET)
         {
-          // Should check against ship?
-          if (   g_entities[j].type == E_ROCK
-              || g_entities[j].type == E_MINE
-              || g_entities[j].type == E_DRONE
-              )
+          // Check all rocks against this rocket
+          for (int j = 1; j < MAX_ENTITIES; j++)
           {
-            if (vlen2(vsub(g_entities[i].pos, g_entities[j].pos)) < CORE_FSquare(g_entities[i].radius+g_entities[j].radius))
+            // Should check against ship?
+            if (   g_entities[j].type == E_ROCK
+                || g_entities[j].type == E_MINE
+                || g_entities[j].type == E_DRONE
+                )
             {
-              // Rocket hit the target!
-              switch (g_entities[j].type)
+              if (vlen2(vsub(g_entities[i].pos, g_entities[j].pos)) < CORE_FSquare(g_entities[i].radius+g_entities[j].radius))
               {
-                case E_MINE: 
-                  PlaySound(SND_EXPLOSSION);
-                  break;
-                default:
-                  break;
+                // Rocket hit the target!
+                switch (g_entities[j].type)
+                {
+                  case E_MINE:
+                    PlaySound(SND_EXPLOSSION);
+                    break;
+                  default:
+                    break;
+                }
+               
+                KillEntity(i);
+                KillEntity(j);
+                
+                break; // Stop checking rocks!
               }
-             
-              KillEntity(i);
-              KillEntity(j);
-              
-              break; // Stop checking rocks!
             }
           }
         }
       }
     }
-  }
-  
-  // Generate new level elements as we advance
-  GenNextElements();
-  
-  // Possibly insert new rock
-  if (g_gs == GS_PLAYING)
-  {
-    float trench = MAIN_SHIP.pos.y - g_current_race_pos; // How much advanced from previous frame
-    if (CORE_RandChance(trench * JUICE_CHANCE_PER_PIXEL))
-      InsertEntity(E_JUICE,
-                   vmake(CORE_FRand(0.f, G_WIDTH), g_camera_offset + G_HEIGHT + GEN_IN_ADVANCE),
-                   vmake(CORE_FRand(-1.f, +1.f), CORE_FRand(-1.f, +1.f)),
-                   JUICE_RADIUS, T_JUICE, false, true);
-  }
-  
-  // Set camera to follow the main ship
-  g_camera_offset = MAIN_SHIP.pos.y - G_HEIGHT/8.f;
-  
-  // Check victory
-  g_current_race_pos = MAIN_SHIP.pos.y;
-  if (g_gs == GS_PLAYING)
-  {
-    if (g_current_race_pos >= LevelDescs[g_current_level].level_length)
+    
+    // Generate new level elements as we advance
+    GenNextElements();
+    
+    // Possibly insert new rock
+    if (g_gs == GS_PLAYING)
     {
-      g_gs = GS_VICTORY;
-      g_gs_timer = 0.f;
-      MAIN_SHIP.gfxadditive = true;
-      PlaySound(SND_SUCCESS);
+      float trench = MAIN_SHIP.pos.y - g_current_race_pos; // How much advanced from previous frame
+      if (CORE_RandChance(trench * JUICE_CHANCE_PER_PIXEL))
+        InsertEntity(E_JUICE,
+                     vmake(CORE_FRand(0.f, G_WIDTH), g_camera_offset + G_HEIGHT + GEN_IN_ADVANCE),
+                     vmake(CORE_FRand(-1.f, +1.f), CORE_FRand(-1.f, +1.f)),
+                     JUICE_RADIUS, T_JUICE, false, true);
+    }
+    
+    // Set camera to follow the main ship
+    g_camera_offset = MAIN_SHIP.pos.y - G_HEIGHT/8.f;
+    
+    // Check victory
+    g_current_race_pos = MAIN_SHIP.pos.y;
+    if (g_gs == GS_PLAYING)
+    {
+      if (g_current_race_pos >= LevelDescs[g_current_level].level_length)
+      {
+        g_gs = GS_VICTORY;
+        g_gs_timer = 0.f;
+        MAIN_SHIP.gfxadditive = true;
+        PlaySound(SND_SUCCESS);
+        g_unlocked_level = g_current_level + 1;
+      }
     }
   }
   
@@ -1208,13 +1602,21 @@ void RunGame()
       if (g_gs_timer >= VICTORY_TIME)
         ResetNewGame(g_current_level+1);
       break;
+      
+    case GS_MAIN_MENU:
+      g_camera_offset += MENU_BKG_SCROLL_SPEED;
+      break;
+      
+    case GS_INGAME_MENU:
+      // Do nothing
+      break;
   }
   
   g_time_from_last_rocket += FRAMETIME;
 }
 
 //-----------------------------------------------------------------------------
-void ProcessInput()
+void ProcessInputInGame()
 {
   if (g_gs == GS_PLAYING)
   {
@@ -1227,12 +1629,12 @@ void ProcessInput()
       g_entities[e].psystem = CreatePSystem(PST_FIRE, MAIN_SHIP.pos, vmake(0.f,0.f));
       g_entities[e].psystem_off = vmake(0.f, -120.f);
     }
-    
+  
     bool up    = SYS_KeyPressed(SYS_KEY_UP);
     bool down  = SYS_KeyPressed(SYS_KEY_DOWN);
     bool left  = SYS_KeyPressed(SYS_KEY_LEFT);
     bool right = SYS_KeyPressed(SYS_KEY_RIGHT);
-    
+  
     // Left-right movement
     if (left && !right)
     {
@@ -1246,19 +1648,19 @@ void ProcessInput()
     }
     if (!left && !right)
       MAIN_SHIP.tilt *= (1.f - SHIP_TILT_FRICTION);
-    
+  
     if (MAIN_SHIP.tilt <= -SHIP_MAX_TILT) MAIN_SHIP.tilt = -SHIP_MAX_TILT;
     if (MAIN_SHIP.tilt >=  SHIP_MAX_TILT) MAIN_SHIP.tilt =  SHIP_MAX_TILT;
-    
+  
     MAIN_SHIP.vel.x += MAIN_SHIP.tilt;
     MAIN_SHIP.vel.x *= (1.f - SHIP_HVEL_FRICTION);
-    
+  
     // Accelerate/slowdown
     if (up   && !down) MAIN_SHIP.vel.y += SHIP_INC_SPEED;
     if (down && !up)   MAIN_SHIP.vel.y -= SHIP_INC_SPEED;
     if (MAIN_SHIP.vel.y > SHIP_MAX_SPEED) MAIN_SHIP.vel.y = SHIP_MAX_SPEED;
     if (MAIN_SHIP.vel.y < SHIP_MIN_SPEED) MAIN_SHIP.vel.y = SHIP_MIN_SPEED;
-    
+  
     float tilt = MAIN_SHIP.tilt;
     if      (tilt < -.6f * SHIP_MAX_TILT) MAIN_SHIP.gfx = T_SHIP_LL;
     else if (tilt < -.2f * SHIP_MAX_TILT) MAIN_SHIP.gfx = T_SHIP_L;
@@ -1267,6 +1669,7 @@ void ProcessInput()
     else                                  MAIN_SHIP.gfx = T_SHIP_RR;
   }
   
+  // Remove this before releasing the game!
   if      (SYS_KeyPressed('1')) ResetNewGame(0);
   else if (SYS_KeyPressed('2')) ResetNewGame(1);
   else if (SYS_KeyPressed('3')) ResetNewGame(2);
@@ -1276,13 +1679,34 @@ void ProcessInput()
   else if (SYS_KeyPressed('7')) ResetNewGame(6);
   else if (SYS_KeyPressed('8')) ResetNewGame(7);
   else if (SYS_KeyPressed('9')) ResetNewGame(8);
+  
+  if (g_just_pressed_esc)
+    EnterMenu(GS_INGAME_MENU);
 }
 
 //-----------------------------------------------------------------------------
-// Game state (apart from entities & other stand-alone modules)
-float g_time      = 0.f;
+void ProcessInput()
+{
+  g_just_pressed_up    = SYS_KeyPressed(SYS_KEY_UP)    && !g_was_pressed_up;
+  g_just_pressed_down  = SYS_KeyPressed(SYS_KEY_DOWN)  && !g_was_pressed_down;
+  g_just_pressed_enter = SYS_KeyPressed(SYS_KEY_ENTER) && !g_was_pressed_enter;
+  g_just_pressed_esc   = SYS_KeyPressed(SYS_KEY_ESC)   && !g_was_pressed_esc;
+  g_just_pressed_space = SYS_KeyPressed(SYS_KEY_SPACE) && !g_was_pressed_space;
+  
+  if (g_gs == GS_MAIN_MENU || g_gs == GS_INGAME_MENU)
+    ProcessInputMenu();
+  else
+    ProcessInputInGame();
+  
+  g_was_pressed_up    = SYS_KeyPressed(SYS_KEY_UP);
+  g_was_pressed_down  = SYS_KeyPressed(SYS_KEY_DOWN);
+  g_was_pressed_enter = SYS_KeyPressed(SYS_KEY_ENTER);
+  g_was_pressed_esc   = SYS_KeyPressed(SYS_KEY_ESC);
+  g_was_pressed_space = SYS_KeyPressed(SYS_KEY_SPACE);
+}
 
-//-----------------------------------------------------------------------------
+
+//=============================================================================
 // Main
 int Main(void)
 {
@@ -1290,7 +1714,10 @@ int Main(void)
   CORE_InitSound();
   LoadTextures();
   LoadSounds();
-  ResetNewGame(0);
+  PrepareFont();
+  
+  //ResetNewGame(0);
+  EnterMenu(GS_MAIN_MENU);
   
   // Set up rendering ---------------------------------------------------------------------
   glViewport(0, 0, SYS_WIDTH, SYS_HEIGHT);
@@ -1301,13 +1728,13 @@ int Main(void)
   glEnable(GL_TEXTURE_2D);
   glEnable(GL_BLEND);
 
-  // Main game loop! ======================================================================
-  while (!SYS_GottaQuit())
+  // Main game loop!
+  while (!SYS_GottaQuit() && !g_user_exit)
   {
     Render();
     SYS_Show();
     ProcessInput();
-    RunGame();
+    Run();
     SYS_Pump();
     SYS_Sleep(16);
     g_time += FRAMETIME;

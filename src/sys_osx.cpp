@@ -41,7 +41,7 @@ void SYS_Show()
 //-----------------------------------------------------------------------------
 bool SYS_GottaQuit()
 {
-  return glfwGetKey(GLFW_KEY_ESC) || !glfwGetWindowParam(GLFW_OPENED);
+  return !glfwGetWindowParam(GLFW_OPENED);
 }
 
 //-----------------------------------------------------------------------------
