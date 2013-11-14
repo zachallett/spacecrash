@@ -27,5 +27,6 @@ inline float vlen2 (vec2 v)           { return v.x * v.x + v.y * v.y; }
 inline float vlen  (vec2 v)           { return (float)sqrt(vlen2(v)); }
 inline float vdot  (vec2 v1, vec2 v2) { return v1.x * v2.x + v1.y * v2.y; }
 inline vec2  vunit (float angle)      { return vmake((float)cos(angle), (float)sin(angle)); }
+inline vec2  vunit (vec2 v)           { return vscale(v, 1.f/vlen(v)); }
 
 #endif

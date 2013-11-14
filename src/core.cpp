@@ -141,16 +141,20 @@ ivec2 CORE_GetBmpSize(int texix)
 }
 
 //-----------------------------------------------------------------------------
-void CORE_RenderCenteredSprite(vec2 pos, vec2 size, int texix)
+void CORE_RenderCenteredSprite(vec2 pos, vec2 size, int texix, rgba color, bool additive)
 {
-  vec2 p0 = vsub(pos, vscale(size, .5f));
-  vec2 p1 = vadd(pos, vscale(size, .5f));
-
-  glBindTexture( GL_TEXTURE_2D, g_textures[texix].tex );
-  glBegin( GL_QUADS );
-  glTexCoord2d(0.0,                 0.0);                 glVertex2f(p0.x, p0.y);
-  glTexCoord2d(g_textures[texix].w, 0.0);                 glVertex2f(p1.x, p0.y);
-  glTexCoord2d(g_textures[texix].w, g_textures[texix].h); glVertex2f(p1.x, p1.y);
-  glTexCoord2d(0.0,                 g_textures[texix].h); glVertex2f(p0.x, p1.y);
-  glEnd();
+    glColor4f(color.r, color.g, color.b, color.a);
+    if (additive) glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    else          glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    vec2 p0 = vsub(pos, vscale(size, .5f));
+    vec2 p1 = vadd(pos, vscale(size, .5f));
+    
+    glBindTexture( GL_TEXTURE_2D, g_textures[texix].tex );
+    glBegin( GL_QUADS );
+    glTexCoord2d(0.0,                 0.0);                 glVertex2f(p0.x, p0.y);
+    glTexCoord2d(g_textures[texix].w, 0.0);                 glVertex2f(p1.x, p0.y);
+    glTexCoord2d(g_textures[texix].w, g_textures[texix].h); glVertex2f(p1.x, p1.y);
+    glTexCoord2d(0.0,                 g_textures[texix].h); glVertex2f(p0.x, p1.y);
+    glEnd();
 }
