@@ -18,8 +18,8 @@ int main(int argc, char *argv[])
   {
     if (glfwOpenWindow(SYS_WIDTH, SYS_HEIGHT, 0, 0, 0, 0, 8, 0, SYS_FULLSCREEN ? GLFW_FULLSCREEN : GLFW_WINDOW) == GL_TRUE) /* rgba, depth, stencil */
     {
-      retval = Main();
-      glfwCloseWindow();
+        retval = Main();
+        glfwCloseWindow();
     }
     glfwTerminate();
   }
@@ -41,13 +41,13 @@ void SYS_Show()
 //-----------------------------------------------------------------------------
 bool SYS_GottaQuit()
 {
-   return glfwGetKey(GLFW_KEY_ESC) || !glfwGetWindowParam(GLFW_OPENED);
+  return glfwGetKey(GLFW_KEY_ESC) || !glfwGetWindowParam(GLFW_OPENED);
 }
 
 //-----------------------------------------------------------------------------
 void SYS_Sleep(int ms)
 {
-  usleep(1000 * ms);
+    usleep(1000 * ms);
 }
 
 //-----------------------------------------------------------------------------

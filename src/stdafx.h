@@ -6,6 +6,7 @@
 
 #pragma pack(1)
 #pragma warning(disable:4996) // Using open/close/read... for file access
+#define _CRT_NONSTDC_NO_DEPRECATE
 #include <SDKDDKVer.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -30,7 +31,7 @@
 #endif
 
 //=============================================================================
-// Common includes
+// Common includes		
 
 #include <stdlib.h>
 #include <stdio.h>
